@@ -1,1 +1,0 @@
-cmd_ast2700_rom.elf ?= riscv32-unknown-elf-ld   -o ast2700_rom.elf  arch/riscv/built-in.o proj/ast2700_rom/built-in.o drivers/built-in.o lib/lib.a -Bstatic --no-dynamic-linker --gc-sections -Ttext 0x14b00000 -T ast2700_rom.lds -Map ast2700_rom.map
