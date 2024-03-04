@@ -1,0 +1,37 @@
+#ifndef __PLATFORM_H__
+#define __PLATFORM_H__
+
+#define ECC_SRAM_MEM	0x10000000
+#define ECC_SRAM_SZ	0x20000		/* 128KB */
+
+#define SRAM_REG	0x14c0a000
+#define SRAM_MEM	0x14bc0000
+#define SRAM_SZ		0x18000		/* 96KB */
+
+#define FMC_MEM_L	0x20000000
+#define SPI0_MEM	0x30000000
+#define SPI1_MEM	0x40000000
+#define FMC_MEM_H	0x60000000
+#define BSPI_MEM	0x70000000
+#define DRAM_MEM	0x80000000
+
+#define USB_VHUB_REG	0x12011000
+#define EMMC_REG	0x12090100
+#define DRAMC_REG	0x12c00000
+#define SCU0_REG	0x12c02000
+#define EMMC_BOOT_REG	0x12c0b000
+#define SLI0_REG	0x12c17000
+
+#define FMC_REG		0x14000000
+#define SCU1_REG	0x14c02000
+#define OTP_REG		0x14c07000
+#define GPIO1_REG	0x14c0b000
+#define SGPIOM0_REG	0x14c0c000
+#define SGPIOM1_REG	0x14c0d000
+#define SLI1_REG	0x14c1e000
+#define LPC0_REG	0x14c31000
+#define LTPI_REG	0x14c34000
+#define WDT_REG		0x14c37000
+#define SGPIOS_REG	0x14c3c000
+
+#endif

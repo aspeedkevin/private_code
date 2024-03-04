@@ -1,0 +1,10 @@
+obj-$(CONFIG_DRAM) += dram/
+obj-$(CONFIG_LTPI) += ltpi/
+obj-$(CONFIG_MMC) += mmc/
+obj-$(CONFIG_OTP) += otp/
+obj-$(CONFIG_SLI) += sli/
+obj-$(CONFIG_SPI) += spi/
+obj-$(CONFIG_UART) += uart/
+obj-$(CONFIG_USB) += usb/
+obj-$(CONFIG_WDT) += wdt/
+obj-$(CONFIG_PCIE) += pcie/

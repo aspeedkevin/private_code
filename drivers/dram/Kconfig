@@ -1,0 +1,62 @@
+if DRAM
+
+config DDR_PHY_TRAINING
+	bool "Enable DDR phy training"
+	help
+	  Say 'y' to enable the PHY training
+
+choice
+	prompt "Select DDR4/DDR5"
+	default DDR4_TYPE
+
+config DDR4_TYPE
+	bool "DDR4 type"
+	help
+	  select DDR4 memory type
+
+config DDR5_TYPE
+	bool "DDR5 type"
+	help
+	  select DDR5 memory type
+
+endchoice
+
+if DDR4_TYPE
+choice
+	prompt "DDR4 target data rate"
+	default ASPEED_DDR4_1600
+
+config DDR4_1600
+	bool "DDR4 targets at 1600Mbps"
+	help
+	  select DDR4 target data rate at 1600M
+
+config DDR4_2400
+	bool "DDR4 targets at 2400Mbps"
+	help
+	  select DDR4 target data rate at 2400M
+
+config DDR4_3200
+	bool "DDR4 targets at 3200Mbps"
+	help
+	  select DDR4 target data rate at 3200M
+endchoice
+
+choice
+	prompt "DDR4 size"
+	default DDR4_4G
+
+config DDR4_4G
+	bool "DDR4 4G"
+	help
+	  select DDR4 4G
+
+config DDR4_16G
+	bool "DDR4 16G"
+	help
+	  select DDR4 16G
+endchoice
+
+endif
+
+endif

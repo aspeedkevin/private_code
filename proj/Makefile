@@ -1,0 +1,1 @@
+obj-$(CONFIG_PROJ_AST2700_ROM) += ast2700_rom/

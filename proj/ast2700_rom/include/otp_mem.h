@@ -1,0 +1,102 @@
+#ifndef __OTP_MEM_H__
+#define __OTP_MEM_H__
+
+/*
+ * OTP memory region ranging from 0x0 to 0x2000. (16-bits per unit)
+ *
+ * ----  0x0  -----
+ *     OTP ROM
+ * ---- 0x400 -----
+ *     OTPCFG
+ * ---- 0x420 -----
+ *     HW STRAP
+ * ---- 0x430 -----
+ *   Flash STRAP
+ * ---- 0x440 -----
+ *   User Region
+ * ---- 0x1000 ----
+ *  Secure Region
+ * ---- 0x1f80 ----
+ *      SW PUF
+ * ---- 0x1fc0 ----
+ *      HW PUF
+ * ---- 0x2000 ----
+ */
+#define OTP_MEM_ROMEXT_BASE	0x0
+#define OTP_MEM_ROMEXT_SIZE	0x400
+#define OTP_MEM_CFG_BASE	0x400
+#define OTP_MEM_CFG_SIZE	0x20
+#define OTP_MEM_STRAP_BASE	0x420
+#define OTP_MEM_STRAP_SIZE	0x10
+#define OTP_MEM_FLASHSTRAP_BASE	0x430
+#define OTP_MEM_FLASHSTRAP_SIZE	0x10
+#define OTP_MEM_USER_BASE	0x440
+#define OTP_MEM_USER_SIZE	0xbc0
+#define OTP_MEM_SEC_BASE	0x1000
+#define OTP_MEM_SEC_SIZE	0xf80
+#define OTP_MEM_SWPUF_BASE	0x1f80
+#define OTP_MEM_SWPUF_SIZE	0x40
+#define OTP_MEM_HWPUF_BASE	0x1fc0
+#define OTP_MEM_HWPUF_SIZE	0x2000
+
+#define OTPCFG(x)		(OTP_MEM_CFG_BASE + (x))
+#define OTPSTRAP(x)		(OTP_MEM_STRAP_BASE + (x))
+#define OTPFLASHSTRAP(x)	(OTP_MEM_FLASHSTRAP_BASE + (x))
+
+/* OTPCFG0 */
+#define OTPCFG0					(OTP_MEM_CFG_BASE + 0)
+#define   OTPCFG0_OTP_MEM_LOCK_ENABLE		BIT(15)
+#define   OTPCFG0_OTP_MEM_ECC_ENABLE		BIT(14)
+#define   OTPCFG0_WR_PROT_OTPKEY_RETIRE		BIT(9)
+#define   OTPCFG0_WR_PROT_OTP_STRAP		BIT(7)
+#define   OTPCFG0_WR_PROT_OTP_CFG		BIT(6)
+#define   OTPCFG0_WR_PROT_OTP_ROM		BIT(5)
+#define   OTPCFG0_WR_PROT_OTP_FLASH_STRAP	BIT(4)
+#define   OTPCFG0_RD_PROT_OTP_STRAP		BIT(3)
+#define   OTPCFG0_RD_PROT_OTP_CFG		BIT(2)
+#define   OTPCFG0_RD_PROT_OTP_ROM		BIT(1)
+#define   OTPCFG0_RD_PROT_OTP_FLASH_STRAP	BIT(0)
+
+/* OTPCFG2 */
+#define OTPCFG2					(OTP_MEM_CFG_BASE + 2)
+#define   OTPCFG2_EN_EMMC_SW_RST		BIT(6)
+#define   OTPCFG2_DIS_BOOT_MSG			BIT(5)
+#define   OTPCFG2_DIS_FLASH_STRAP		BIT(4)
+#define   OTPCFG2_DIS_RECOVERY_MODE		BIT(3)
+#define   OTPCFG2_DIS_POST_ROM_PATCH		BIT(2)
+#define   OTPCFG2_DIS_PRE_ROM_PATCH		BIT(1)
+#define   OTPCFG2_BOOT_FROM_UART_PORT_SEL	BIT(0)
+
+/* OTPCFG4 */
+#define OTPCFG4					(OTP_MEM_CFG_BASE + 4)
+#define   OTPCFG4_PRE_OTP_PATCH_LOCATION	GENMASK(10, 1)
+#define   OTPCFG4_PRE_OTP_PATCH_VLD		BIT(0)
+
+/* OTPCFG5 */
+#define OTPCFG5					(OTP_MEM_CFG_BASE + 5)
+#define   OTPCFG5_PRE_OTP_PATCH_SIZE		GENMASK(9, 0)
+
+/* OTPCFG6 */
+#define OTPCFG6					(OTP_MEM_CFG_BASE + 6)
+#define   OTPCFG6_POST_OTP_PATCH_LOCATION	GENMASK(10, 1)
+#define   OTPCFG6_POST_OTP_PATCH_VLD		BIT(0)
+
+/* OTPCFG7 */
+#define OTPCFG7					(OTP_MEM_CFG_BASE + 7)
+#define   OTPCFG7_POST_OTP_PATCH_SIZE		GENMASK(9, 0)
+
+/* OTPCFG9 */
+#define OTPCFG9					(OTP_MEM_CFG_BASE + 9)
+#define   OTPCFG9_EN_AUTO_LOAD			BIT(15)
+#define   OTPCFG9_CPU_SCU0C8_AUTO_VAL		GENMASK(14, 0)
+
+/* OTPCFG10 */
+#define OTPCFG10				(OTP_MEM_CFG_BASE + 10)
+#define   OTPCFG10_WR_PROT_SCU0C8		BIT(15)
+#define   OTPCFG10_IO_SCU0C8_AUTO_VAL		GENMASK(14, 0)
+
+/* OTPSTRAP14 */
+#define OTPSTRAP14				(OTP_MEM_STRAP_BASE + 14)
+#define   OTPSTRAP14_OTP_CFG_ECCBRP_EN		BIT(0)
+
+#endif

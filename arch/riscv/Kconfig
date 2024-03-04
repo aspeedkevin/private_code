@@ -1,0 +1,18 @@
+if ARCH_RISCV
+
+config SYS_ARCH
+	default "riscv"
+
+config CPU_IBEX
+	bool "Ibex RV32IM core"
+	help
+	  Say 'y' to select Ibex RISC-V core
+
+config COUNTER_FREQUENCY
+	int "Timer clock frequency"
+	default 0
+	help
+	  Setup time clock frequency for certain platform.
+	  0 means no need to configure the system counter frequency.
+
+endif

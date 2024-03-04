@@ -1,0 +1,59 @@
+menu "Drivers"
+
+config UART
+	bool "UART (NS16550A)"
+	help
+	  Say 'y' to enable NS16550A-compatible UART
+
+config OTP
+	bool "OTP"
+	help
+	  Say 'y' to enable Aspeed OTP
+
+config DRAM
+	bool "DRAM"
+	help
+	  Say 'y' to enable DRAMC and DDRPHY
+
+source "drivers/dram/Kconfig"
+
+config SLI
+	bool "SLI"
+	help
+	  Say 'y' to enable the SLI driver
+
+config SPI
+	bool "SPI"
+	help
+	  Say 'y' to enable SPI support
+
+config LTPI
+	bool "LTPI"
+	help
+	  Say 'y' to enable LTPI driver
+
+config MMC
+	bool "MMC"
+	help
+	  Say 'y' to enable MMC support
+
+config USB
+	bool "USB"
+	help
+	  Say 'y' to enable USB support
+
+config WDT
+	bool "WDT"
+	help
+	  Say 'y' to enable WDT support
+
+config PCIE
+	bool "PCIE"
+	help
+	  Say 'y' to enable PCIE support
+
+source "drivers/uart/Kconfig"
+source "drivers/spi/Kconfig"
+source "drivers/sli/Kconfig"
+
+endmenu

@@ -1,0 +1,13 @@
+config ARCH_RISCV
+	bool "RISC-V architecture"
+	help
+	  Say 'y' to select RISC-V architecture
+
+config SYS_ARCH
+	string
+	help
+	  This option should contain the architecture name to build
+	  the appropriate arch/<CONFIG_SYS_ARCH> directory.
+	  All the architectures should specify this option correctly.
+
+source "arch/riscv/Kconfig"
