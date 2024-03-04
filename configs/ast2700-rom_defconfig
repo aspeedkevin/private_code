@@ -1,4 +1,4 @@
-CONFIG_CROSS_COMPILE="../lowrisc-toolchain-gcc-rv32imcb-20220524-1/bin/riscv32-unknown-elf-"
+CONFIG_CROSS_COMPILE="./lowrisc-toolchain-gcc-rv32imcb-20220524-1/bin/riscv32-unknown-elf-"
 CONFIG_BINARY_NAME="ast2700_rom"
 CONFIG_SYS_TEXT_BASE=0x14b00000
 CONFIG_SYS_MAX_SIZE=0x10000
