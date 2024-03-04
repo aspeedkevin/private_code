@@ -33,4 +33,4 @@
 #define CONFIG_BSS_DATA_ADDR 0x14bd7800
 #define CONFIG_PROJ_AST2700_ROM 1
 #define CONFIG_DEBUG 1
-#define CONFIG_CROSS_COMPILE "riscv32-unknown-elf-"
+#define CONFIG_CROSS_COMPILE "../lowrisc-toolchain-gcc-rv32imcb-20220524-1/bin/riscv32-unknown-elf-"
