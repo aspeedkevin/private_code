@@ -1,0 +1,26 @@
+config PLAT_AST2700
+	bool "AST2700 platform"
+	help
+	  Say 'y' to select AST2700 platform
+
+choice
+	prompt "Project select"
+
+config PROJ_AST2700_ROM
+	bool "AST2700 ROM"
+	select ARCH_RISCV
+	select CPU_IBEX
+	select PLAT_AST2700
+	help
+	  Say 'y' to build AST2700 ROM code
+
+endchoice
+
+config SYS_PROJ
+	string
+	help
+	  This option should contain the project name to build
+	  the appropriate proj/<CONFIG_SYS_PROJ> directory.
+	  All the projects should specify this option correctly.
+
+source "proj/ast2700_rom/Kconfig"

@@ -1,0 +1,16 @@
+if SPI
+
+config CA35_SPI_FLASH_SRC_ADDR
+	hex "Cortex-A35 BL0 image SPI source address"
+	depends on PROJ_AST2700_RAM
+	default 0x20060000
+	help
+	  The SPI memory address where CA35 BL0 image will be loaded from.
+
+config SPI_FMC
+	bool "SPI_FMC"
+	default n
+	help
+	  Say 'y' to enable SPI FMC support
+
+endif
