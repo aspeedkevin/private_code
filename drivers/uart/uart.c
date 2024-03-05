@@ -33,7 +33,7 @@ int uart_configure(struct uart *uart, struct uart_cfg *cfg)
 	switch (cfg->parity) {
 	case UART_CFG_PARITY_EVEN:
 		lcr |= UART_LCR_PARITY_MODE;
-		/* fall through */
+		/* fallthrough */
 	case UART_CFG_PARITY_ODD:
 		lcr |= UART_LCR_PARITY_EN;
 		break;
@@ -47,7 +47,7 @@ int uart_configure(struct uart *uart, struct uart_cfg *cfg)
 	switch (cfg->stop_bits) {
 	case UART_CFG_STOP_BITS_1_5:
 		lcr |= UART_LCR_STOP;
-		/* fall through */
+		/* fallthrough */
 	case UART_CFG_STOP_BITS_1:
 		break;
 	default:
