@@ -674,9 +674,6 @@ ifneq ($(KBUILD_SRC),)
 	fi;
 endif
 
-clean:
-	echo 123
-
 # prepare2 creates a makefile if using a separate output directory
 prepare2: prepare3 outputmakefile
 
@@ -724,6 +721,7 @@ headerdep:
 # make distclean Remove editor backup files, patch leftover files and the like
 
 # Directories & files removed with 'make clean'
+CLEAN_FILES += $(BINARY_NAME)*
 
 # Directories & files removed with 'make mrproper'
 MRPROPER_DIRS  += include/config include/generated .tmp_objdiff
@@ -732,7 +730,23 @@ MRPROPER_FILES += .config .config.old .version .old_version \
 
 # clean - Delete most
 #
+clean: rm-dirs  = $(CLEAN_DIRS)
+clean: rm-files = $(CLEAN_FILES)
 
+clean-dirs      = $(addprefix _clean_, . $(soc-dirs))
+
+PHONY += $(clean-dirs) clean archclean
+$(clean-dirs):
+	$(Q)$(MAKE) $(clean)=$(patsubst _clean_%,%,$@)
+
+clean: $(clean-dirs)
+	$(call cmd,rmdirs)
+	$(call cmd,rmfiles)
+	@find . $(RCS_FIND_IGNORE) \
+		\( -name '*.[oas]' -o -name '.*.cmd' \
+		-o -name '.*.d' -o -name '.*.tmp' \
+		-o -name '.tmp_*.o.*' \
+		-o -name '*.gcno' \) -type f -print | xargs rm -f
 
 # mrproper - Delete all generated files, including .config
 #
@@ -741,15 +755,29 @@ mrproper: rm-files := $(wildcard $(MRPROPER_FILES))
 mrproper-dirs      := $(addprefix _mrproper_, scripts)
 
 PHONY += $(mrproper-dirs) mrproper
+$(mrproper-dirs):
+	$(Q)$(MAKE) $(clean)=$(patsubst _mrproper_%,%,$@)
 
+mrproper: clean $(mrproper-dirs)
+	$(call cmd,rmdirs)
+	$(call cmd,rmfiles)
 
 # distclean
 #
+PHONY += distclean
+
+distclean: mrproper
+	@find $(srctree) $(RCS_FIND_IGNORE) \
+		\( -name '*.orig' -o -name '*.rej' -o -name '*~' \
+		-o -name '*.bak' -o -name '#*#' -o -name '.*.orig' \
+		-o -name '.*.rej' -o -name '*%'  -o -name 'core' \) \
+		-type f -print | xargs rm -f
 
 
 # Shorthand for $(Q)$(MAKE) -f scripts/Makefile.clean obj=dir
 # Usage:
 # $(Q)$(MAKE) $(clean)=dir
+clean := -f $(if $(KBUILD_SRC),$(srctree)/)scripts/Makefile.clean obj
 
 
 PHONY += help
