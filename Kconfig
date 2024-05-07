@@ -68,6 +68,10 @@ config DEBUG
 	help
 	  Say 'y' to enable debug messages
 
+config FPGA_ASPEED
+	bool "FPGA"
+	help
+	  Say 'y' to enable FPGA platform
 endmenu
 
 source "arch/Kconfig"

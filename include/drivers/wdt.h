@@ -1,12 +1,8 @@
-/* SPDX-License-Identifier: Apache-2.0 */
-/*
- * Copyright (c) 2023 ASPEED Technology Inc.
- */
-
 #ifndef __WDT_H__
 #define __WDT_H__
 
 #include <bootstage.h>
+#include <rom_context.h>
 #include <utils.h>
 #include <types.h>
 
@@ -35,12 +31,11 @@
 #define WDT_RESTART_KEY		0x4755
 #define WDT_ABR_CLEAR		0xea000000
 
-/* TODO: must be fixed in the future */
-#define WDT_RSTMASK_1_VAL	0x00030421
-#define WDT_RSTMASK_2_VAL	0x00000036
+#define WDT_RSTMASK_1_VAL	0x0203e779
+#define WDT_RSTMASK_2_VAL	0x000003f6
 #define WDT_RSTMASK_3_VAL	0x000093ec
-#define WDT_RSTMASK_4_VAL	0x01203803
-#define WDT_RSTMASK_5_VAL	0x00000000
+#define WDT_RSTMASK_4_VAL	0x00303803
+#define WDT_RSTMASK_5_VAL	0x00020000
 
 enum wdt_device {
 	WDT_DEV0,
@@ -60,8 +55,9 @@ enum wdt_errno {
     WDT_ERR_SUCCESS,
 };
 
-void wdt_enable(uint32_t wdt_devid, uint32_t timeout_us);
-void wdt_disable(uint32_t wdt_devid);
-bootstage_t wdt_rstmask_init(void);
+void wdt_enable(uint32_t dev_id, uint32_t timeout_us);
+void wdt_disable(uint32_t dev_id);
+
+bootstage_t wdt_rstmask_init(struct rom_context *rom_ctx);
 
 #endif

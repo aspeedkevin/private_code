@@ -33,8 +33,7 @@ int uart_configure(struct uart *uart, struct uart_cfg *cfg)
 	switch (cfg->parity) {
 	case UART_CFG_PARITY_EVEN:
 		lcr |= UART_LCR_PARITY_MODE;
-		/* fallthrough */
-		[[fallthrough]];
+		/* fall through */
 	case UART_CFG_PARITY_ODD:
 		lcr |= UART_LCR_PARITY_EN;
 		break;
@@ -48,8 +47,7 @@ int uart_configure(struct uart *uart, struct uart_cfg *cfg)
 	switch (cfg->stop_bits) {
 	case UART_CFG_STOP_BITS_1_5:
 		lcr |= UART_LCR_STOP;
-		/* fallthrough */
-		[[fallthrough]];
+		/* fall through */
 	case UART_CFG_STOP_BITS_1:
 		break;
 	default:
@@ -129,6 +127,22 @@ int uart_poll_out(struct uart *uart, uint8_t byte)
 		if (poll_cnt++ > UART_POLL_MAX)
 			return -ETIMEDOUT;
 
+		sts = readl(uart->base + UART_LSR);
+	} while (!(sts & UART_LSR_THRE));
+
+	writel(byte, uart->base + UART_THR);
+
+	return 0;
+}
+
+int uart_poll_out_forever(struct uart *uart, uint8_t byte)
+{
+	uint32_t sts;
+
+	if (!uart)
+		return -EINVAL;
+
+	do {
 		sts = readl(uart->base + UART_LSR);
 	} while (!(sts & UART_LSR_THRE));
 

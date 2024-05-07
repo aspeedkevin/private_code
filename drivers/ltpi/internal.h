@@ -1,7 +1,3 @@
-/* SPDX-License-Identifier: Apache-2.0 */
-/*
- * Copyright (c) 2023 ASPEED Technology Inc.
- */
 #include <utils.h>
 #include <debug.h>
 
@@ -18,11 +14,14 @@
 #define LTPI_SP_CAP_600M			BIT(9)
 #define LTPI_SP_CAP_800M			BIT(10)
 #define LTPI_SP_CAP_1G				BIT(11)
+#define LTPI_SP_CAP_500M			BIT(12)
 /* --gap-- */
-#define LTPI_SP_CAP_DDR				BIT(15)
-#define LTPI_SP_CAP_ASPEED_SUPPORTED                                               \
-	(LTPI_SP_CAP_25M | LTPI_SP_CAP_50M | LTPI_SP_CAP_100M | LTPI_SP_CAP_200M | \
-	 LTPI_SP_CAP_250M | LTPI_SP_CAP_400M | LTPI_SP_CAP_800M | LTPI_SP_CAP_1G)
+#define LTPI_SP_CAP_DDR BIT(15)
+#define LTPI_SP_CAP_ASPEED_SUPPORTED                              \
+	(LTPI_SP_CAP_25M | LTPI_SP_CAP_50M | LTPI_SP_CAP_75M |    \
+	 LTPI_SP_CAP_100M | LTPI_SP_CAP_150M | LTPI_SP_CAP_200M | \
+	 LTPI_SP_CAP_250M | LTPI_SP_CAP_300M | LTPI_SP_CAP_400M | \
+	 LTPI_SP_CAP_600M | LTPI_SP_CAP_500M | LTPI_SP_CAP_DDR)
 
 #define LTPI_SP_CAP_MASK_25M			GENMASK(0, 0)
 #define LTPI_SP_CAP_MASK_50M			GENMASK(1, 0)

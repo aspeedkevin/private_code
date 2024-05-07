@@ -1,10 +1,10 @@
 ## BootMCU
-BootMCU is designated to load the first, verified image for the main processor (e.g. ARM CA35). The image verification is achieved in the collaboration with the RoT Caliptra. It is also responsible for device recovery by the boot-from-USB/UART capabilities.
+BootMCU is designated to load and verify the first mutable code for whole SoC and that of the main processos. The image verification is achieved in the collaboration with the RoT Caliptra. It is also responsible for device recovery by the boot-from-USB/UART capabilities.
 
 This repo contains the baremetal code to build BootMCU code in terms of the project selected.
 
 ## Quick Start (AST2700 BootMCU ROM code for example)
-1. Download lowrisc toolchain
+1. Download lowrisc toolchain (v2022 for example)
 ```
 wget https://github.com/lowRISC/lowrisc-toolchains/releases/download/20220524-1/lowrisc-toolchain-gcc-rv32imcb-20220524-1.tar.xz
 ```

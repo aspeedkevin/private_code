@@ -15,19 +15,44 @@ config BSS_DATA_SIZE
 	  Reserve memory size in bytes for ROM to read/write
 	  .bss and .data variables.
 
-config RAM_CODE_LOAD_ADDR
-	hex "RAM code load address"
+config ROM_MAJOR_VER
+	hex "ROM major version number"
 	help
-	  The address where the RAM code will be loaded to.
+	  the ROM major version (0x00~0xff) shown in the banner message.
 
-config RAM_CODE_LOAD_SIZE
-	hex "RAM code load size in bytes"
+config ROM_MINOR_VER
+	hex "ROM minor version number"
 	help
-	  The total bytes to load the RAM code.
+	  the ROM minor version (0x00~0xff) shown in the banner message.
 
-config RAM_CODE_ENTRY_ADDR
-	hex "RAM code entry address"
+config FMC_LOAD_ADDR
+	hex "FMC load address"
 	help
-	  The address of RAM code entry point.
+	  The address where the First Mutable Code (FMC) will be loaded to.
+
+config FMC_LOAD_SIZE
+	hex "FMC maximum load size in bytes"
+	help
+	  The maximum bytes to load the First Mutable Code (FMC)
+
+config FMC_ENTRY_ADDR
+	hex "FMC entry address"
+	help
+	  The entry point of First Mutable Code (FMC) entry point.
+
+config CPTRA_LOAD_ADDR
+	hex "Caliptra FW load address"
+	help
+	  The address where the Caliptra FW will be loaded to.
+
+config CPTRA_LOAD_SIZE
+	hex "Caliptra FW maximum load size in bytes"
+	help
+	  The maximum bytes to load the Caliptra FW
+
+config CPTRA_EXEC_TMOUT
+	int "Calitpra execution timeout in us"
+	help
+	  The timeout in microsecond (us) for Caliptra execution
 
 endif

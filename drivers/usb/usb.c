@@ -1,26 +1,24 @@
-// SPDX-License-Identifier: GPL-2.0+
-/*
- * Copyright 2023 Aspeed Technology Inc.
- */
-
 #include <bootstage.h>
 #include <drivers/ch9.h>
 #include <drivers/sli.h>
+#include <drivers/scu.h>
+#include <drivers/otp.h>
 #include <drivers/usb_dfu.h>
 #include <drivers/usb.h>
 #include <io.h>
 #include <lib/string.h>
 #include <platform.h>
+#include <otp_mem.h>
 #include <types.h>
 #include <utils.h>
 
+#include <lib/console.h>
+#include <lib/printf.h>
 /*****************************
  *                           *
  * VHUB register definitions *
  *                           *
  *****************************/
-#define VHUB_BASE				USB_VHUB_REG
-
 #define	VHUB_CTRL				0x00	/* Root Function Control & Status Register */
 #define	VHUB_CONF				0x04	/* Root Configuration Setting Register */
 #define	VHUB_IER				0x08	/* Interrupt Ctrl Register */
@@ -92,8 +90,11 @@
 #define VHUB_EP0_SET_HIGH_ADDR(x)		(((x) & 0x3) << 30)
 
 /* SCU ctrl */
-#define SCU_USB_MULTI_CTRL			0x410
+#define SCU0_USB_MULTI_CTRL			0x410
+#define SCU1_USB_MULTI_CTRL			0x3B0
 #define SCU_RST_CTRL				0x220
+#define SCU0_CLK_STOP_CLR_CTRL			0x244
+#define SCU1_CLK_STOP_CLR_CTRL			0x264
 
 const char *usb_strings[] = {
 	"",
@@ -386,35 +387,141 @@ enum usb_state {
 	STATUS_OUT,
 };
 
-enum usb_state usb_fsm_state;
+static enum usb_state usb_fsm_state;
 
+enum usb_port {
+	PORT_A,
+	PORT_B,
+	PORT_C,
+	PORT_D,
+	PORT_NUM,
+};
+
+static enum usb_port usb_vhub_port = PORT_A;
+
+#define OTP_USB_UART_NUM	13 //OTP configurable USB2UART number (No UART13/14)
+#define USB_UART_NUM		15 //Total USB2UART number
+
+/* OTP defined UART Mode vlaues */
+#define USB_UART_MODE_0		0 //UART and Device both not connected
+#define USB_UART_MODE_1		1 //UART Real mode, and Device connected
+#define USB_UART_MODE_2		2 //UART Pseduo mode, and Device connected
+#define USB_UART_MODE_3		3 //UART not connected, but Device connected
+
+/* USB2COM Mode Selection for Register 0x14120810 */
+#define UART_NOT_CONNCET	(0)
+#define UART_REAL_CONNCET	BIT(0)
+#define UART_PSEUDO_CONNCET	BIT(1)
+
+struct usb_uart_cfg {
+	struct {
+		uint8_t	mode;
+		uint8_t	tx_discard_off;
+	} usb_uart[USB_UART_NUM];
+	uint8_t hub_23ports;
+	uint8_t mode3;
+	uint8_t put_all_msg;
+} _packed;
+
+static bool usb_uart_enabled;
+
+struct usb_vhub_config {
+	uint32_t base;
+	uint32_t scu_multi_func;
+	uint32_t scu_reset;
+	uint32_t scu_clock;
+	uint32_t func_mask;
+	uint32_t func_bits;
+	uint32_t reset_bits;
+	uint32_t clock_bits;
+};
+
+static struct usb_vhub_config usb_cfg[PORT_NUM] = {
+	{
+		USB_VHUBA_REG,
+		(SCU0_REG + SCU0_USB_MULTI_CTRL),
+		(SCU0_REG + SCU_RST_CTRL),
+		(SCU0_REG + SCU0_CLK_STOP_CLR_CTRL),
+		(GENMASK(25, 24) | BIT(18) | GENMASK(3, 2)),
+		BIT(2), //vHubA1
+		BIT(0),
+		BIT(14),
+	},
+	{
+		USB_VHUBB_REG,
+		(SCU0_REG + SCU0_USB_MULTI_CTRL),
+		(SCU0_REG + SCU_RST_CTRL),
+		(SCU0_REG + SCU0_CLK_STOP_CLR_CTRL),
+		(GENMASK(29, 28) | BIT(18) | GENMASK(7, 6)),
+		(BIT(18) | BIT(6)), //vHubB1 and PortB access SRAM
+		BIT(3),
+		BIT(7),
+	},
+	{
+		USB_VHUBC_REG,
+		(SCU1_REG + SCU1_USB_MULTI_CTRL),
+		(SCU1_REG + SCU_RST_CTRL),
+		(SCU1_REG + SCU1_CLK_STOP_CLR_CTRL),
+		(GENMASK(1, 0)),
+		BIT(0), //vHubC
+		BIT(27),
+		BIT(17),
+	},
+	{
+		USB_VHUBD_REG,
+		(SCU1_REG + SCU1_USB_MULTI_CTRL),
+		(SCU1_REG + SCU_RST_CTRL),
+		(SCU1_REG + SCU1_CLK_STOP_CLR_CTRL),
+		(GENMASK(3, 2)),
+		BIT(2), //vHubD
+		BIT(29),
+		BIT(18),
+	},
+};
 static bool is_dnload_done;
+static u32 *dfu_dst_addr;
+static u32 dfu_max_len;
+
+static void safe_memcpy(void *dest, size_t dest_size, const void *src, size_t num_bytes)
+{
+	/* Check if buffer is not NULL */
+	if (!dest || !src)
+		return;
+
+	/* Check if the destination buffer is large enough */
+	if (num_bytes > dest_size)
+		num_bytes = dest_size;
+
+	memcpy(dest, src, num_bytes);
+}
 
 static void vhub_ep0_tx(u64 addr, int size)
 {
+	struct usb_vhub_config *usb = &usb_cfg[usb_vhub_port];
 	uint8_t high_addr = addr >> 32;
 
 	/* low addr */
-	writel(addr, VHUB_BASE + VHUB_EP0_DATA);
+	writel(addr, usb->base + VHUB_EP0_DATA);
 
 	/* high addr/tx len/tx ready */
 	writel(VHUB_EP0_SET_HIGH_ADDR(high_addr) |
 	       VHUB_EP0_SET_TX_LEN(size) |
 	       VHUB_EP0_TX_BUFF_RDY,
-	       VHUB_BASE + VHUB_EP0_CTRL);
+	       usb->base + VHUB_EP0_CTRL);
 }
 
 static void vhub_ep0_rx(u64 addr)
 {
+	struct usb_vhub_config *usb = &usb_cfg[usb_vhub_port];
 	uint8_t high_addr = addr >> 32;
 
 	/* low addr */
-	writel(addr, VHUB_BASE + VHUB_EP0_DATA);
+	writel(addr, usb->base + VHUB_EP0_DATA);
 
 	/* high addr/rx ready */
 	writel(VHUB_EP0_SET_HIGH_ADDR(high_addr) |
 	       VHUB_EP0_RX_BUFF_RDY,
-	       VHUB_BASE + VHUB_EP0_CTRL);
+	       usb->base + VHUB_EP0_CTRL);
 }
 
 static void vhub_req_cleanup(void)
@@ -427,6 +534,7 @@ static uint8_t vhub_ep0_in(void)
 {
 	uint32_t mps, data_size_max;
 	uint32_t chunk;
+	u32 offset;
 	u64 tx_buff_addr;
 
 	switch (usb_fsm_state) {
@@ -455,10 +563,19 @@ static uint8_t vhub_ep0_in(void)
 	case STATUS_IN:
 		usb_fsm_state = IDLE;
 		if (dfu_data.state == dfuDNLOAD_IDLE) {
-			memcpy((uint8_t *)DFU_OUTPUT_BASE +
-			       usb_req_ctx.block_nr * DRAM_BLOCK_SIZE,
-			       ep0_ctrl_buf,
-			       DRAM_BLOCK_SIZE);
+			offset = usb_req_ctx.block_nr * DRAM_BLOCK_SIZE;
+			if (dfu_max_len > offset) {
+				safe_memcpy((uint8_t *)dfu_dst_addr + offset,
+					    dfu_max_len - offset,
+					    ep0_ctrl_buf,
+					    DRAM_BLOCK_SIZE);
+			} else {
+				/* This address is out of max. length of FW size, so do not copy to SRAM.
+				 * Also repot DFU bStatus Error-8 for DFU_GETSTATUS Request
+				 */
+				dfu_data.state = dfuERROR;
+				dfu_data.status = errADDRESS;
+			}
 
 			vhub_req_cleanup();
 		}
@@ -472,11 +589,12 @@ static uint8_t vhub_ep0_in(void)
 
 static uint8_t vhub_ep0_out(void)
 {
+	struct usb_vhub_config *usb = &usb_cfg[usb_vhub_port];
 	uint32_t val;
 
 	switch (usb_fsm_state) {
 	case DATA_OUT:
-		val = readl(VHUB_BASE + VHUB_EP0_CTRL);
+		val = readl(usb->base + VHUB_EP0_CTRL);
 		usb_req_ctx.actual += VHUB_EP0_RX_LEN(val);
 
 		if (usb_req_ctx.length == usb_req_ctx.actual) {
@@ -493,12 +611,10 @@ static uint8_t vhub_ep0_out(void)
 		if (dfu_data.state == dfuIDLE && usb_req_ctx.block_nr != -1)
 			is_dnload_done = true;
 
-		/* Download size exceeds RAM code size */
-		if (dfu_data.state == dfuDNLOAD_IDLE &&
-		    usb_req_ctx.block_nr != -1 &&
-		    ((usb_req_ctx.block_nr + 1) * DRAM_BLOCK_SIZE >= CONFIG_RAM_CODE_LOAD_SIZE)) {
+		/* Download size exceeds RAM code size. Error reported and download complete  */
+		if (dfu_data.state == dfuERROR && dfu_data.status == errADDRESS)
 			is_dnload_done = true;
-		}
+
 		break;
 	default:
 		return (STS_OUT_WRONG_STATE << 4 | usb_fsm_state);
@@ -509,6 +625,7 @@ static uint8_t vhub_ep0_out(void)
 
 static int vhub_std_request(struct usb_ctrlrequest *crq)
 {
+	struct usb_vhub_config *usb = &usb_cfg[usb_vhub_port];
 	uint16_t wValue = le16_to_cpu(crq->wValue);
 	int desc_idx, desc_type;
 	int len;
@@ -518,7 +635,7 @@ static int vhub_std_request(struct usb_ctrlrequest *crq)
 
 	switch (crq->bRequest) {
 	case USB_REQ_SET_ADDRESS:
-		writel(wValue, VHUB_BASE + VHUB_CONF);
+		writel(wValue, usb->base + VHUB_CONF);
 		vhub_ep0_tx(0, 0);
 		return USBD_REQ_HANDLED;
 
@@ -528,16 +645,18 @@ static int vhub_std_request(struct usb_ctrlrequest *crq)
 		switch (wValue >> 8) {
 		case USB_DT_DEVICE:
 			/* copy device descriptor */
-			memcpy(ep0_ctrl_buf, &dfu_mode_desc.device_desc,
-			       sizeof(dfu_mode_desc.device_desc));
+			safe_memcpy(ep0_ctrl_buf, USB_DMA_BUF_SIZE,
+				    &dfu_mode_desc.device_desc,
+				    sizeof(dfu_mode_desc.device_desc));
 			usb_req_ctx.length = sizeof(dfu_mode_desc.device_desc);
 			return USBD_REQ_HANDLED;
 
 		case USB_DT_CONFIG:
 			/* copy config descriptor */
-			memcpy(ep0_ctrl_buf, &dfu_mode_desc.cfg_desc,
-			       sizeof(dfu_mode_desc.cfg_desc) +
-			       sizeof(dfu_mode_desc.dfu_cfg));
+			safe_memcpy(ep0_ctrl_buf, USB_DMA_BUF_SIZE,
+				    &dfu_mode_desc.cfg_desc,
+				    sizeof(dfu_mode_desc.cfg_desc) +
+				    sizeof(dfu_mode_desc.dfu_cfg));
 			usb_req_ctx.length = sizeof(dfu_mode_desc.cfg_desc) +
 				sizeof(dfu_mode_desc.dfu_cfg);
 			return USBD_REQ_HANDLED;
@@ -548,46 +667,52 @@ static int vhub_std_request(struct usb_ctrlrequest *crq)
 			switch (desc_idx) {
 			case 0x0:
 				/* Send Language ID descriptor */
-				memcpy(ep0_ctrl_buf, &string_desc.lang_desc,
-				       sizeof(string_desc.lang_desc));
+				safe_memcpy(ep0_ctrl_buf, USB_DMA_BUF_SIZE,
+					    &string_desc.lang_desc,
+					    sizeof(string_desc.lang_desc));
 				usb_req_ctx.length = sizeof(string_desc.lang_desc);
 				break;
 			case 0x1:
 				for (int i = 0; i < len; i++)
 					string_desc.utf16le_mfr.bString[i] = usb_strings[desc_idx][i];
 				/* Send manufacturer descriptor */
-				memcpy(ep0_ctrl_buf, &string_desc.utf16le_mfr,
-				       sizeof(string_desc.utf16le_mfr));
+				safe_memcpy(ep0_ctrl_buf, USB_DMA_BUF_SIZE,
+					    &string_desc.utf16le_mfr,
+					    sizeof(string_desc.utf16le_mfr));
 				usb_req_ctx.length = sizeof(string_desc.utf16le_mfr);
 				break;
 			case 0x2:
 				for (int i = 0; i < len; i++)
 					string_desc.utf16le_product.bString[i] = usb_strings[desc_idx][i];
 				/* Send product descriptor */
-				memcpy(ep0_ctrl_buf, &string_desc.utf16le_product,
-				       sizeof(string_desc.utf16le_product));
+				safe_memcpy(ep0_ctrl_buf, USB_DMA_BUF_SIZE,
+					    &string_desc.utf16le_product,
+					    sizeof(string_desc.utf16le_product));
 				usb_req_ctx.length = sizeof(string_desc.utf16le_product);
 				break;
 			case 0x3:
 				for (int i = 0; i < len; i++)
 					string_desc.utf16le_sn.bString[i] = usb_strings[desc_idx][i];
 				/* Send serial number descriptor */
-				memcpy(ep0_ctrl_buf, &string_desc.utf16le_sn,
-				       sizeof(string_desc.utf16le_sn));
+				safe_memcpy(ep0_ctrl_buf, USB_DMA_BUF_SIZE,
+					    &string_desc.utf16le_sn,
+					    sizeof(string_desc.utf16le_sn));
 				usb_req_ctx.length = sizeof(string_desc.utf16le_sn);
 				break;
 			case 0x4:
 				for (int i = 0; i < len; i++)
 					string_desc.utf16le_image0.bString[i] = usb_strings[desc_idx][i];
 				/* Send if0 string descriptor */
-				memcpy(ep0_ctrl_buf, &string_desc.utf16le_image0,
-				       sizeof(string_desc.utf16le_image0));
+				safe_memcpy(ep0_ctrl_buf, USB_DMA_BUF_SIZE,
+					    &string_desc.utf16le_image0,
+					    sizeof(string_desc.utf16le_image0));
 				usb_req_ctx.length = sizeof(string_desc.utf16le_image0);
 				break;
 			case OS_STRING_IDX:
 				/* Send Microsoft OS String Descriptor */
-				memcpy(ep0_ctrl_buf, &desc_string_ms_10,
-				       sizeof(desc_string_ms_10));
+				safe_memcpy(ep0_ctrl_buf, USB_DMA_BUF_SIZE,
+					    &desc_string_ms_10,
+					    sizeof(desc_string_ms_10));
 				usb_req_ctx.length = sizeof(desc_string_ms_10);
 				break;
 			}
@@ -606,7 +731,7 @@ static int vhub_std_request(struct usb_ctrlrequest *crq)
 			uint8_t status[2];
 			status[0] = 1 << USB_DEVICE_SELF_POWERED;
 			status[0] |= 0 << USB_DEVICE_REMOTE_WAKEUP;
-			memcpy(ep0_ctrl_buf, status, sizeof(status));
+			safe_memcpy(ep0_ctrl_buf, USB_DMA_BUF_SIZE, status, sizeof(status));
 			usb_req_ctx.length = sizeof(status);
 			return USBD_REQ_HANDLED;
 		}
@@ -683,13 +808,15 @@ static int vhub_vendor_request(struct usb_ctrlrequest *crq)
 	switch (crq->bRequest) {
 	case VENDOR_REQ_MS_OS_DESC:
 		if (crq->wIndex == WINDEX_OS_FEATURE_EXT_COMPAT_ID) {
-			memcpy(ep0_ctrl_buf, &desc_compat_id_ms,
-				       sizeof(desc_compat_id_ms));
+			safe_memcpy(ep0_ctrl_buf, USB_DMA_BUF_SIZE,
+				    &desc_compat_id_ms,
+				    sizeof(desc_compat_id_ms));
 			usb_req_ctx.length = sizeof(desc_compat_id_ms);
 			return USBD_REQ_HANDLED;
 		} else if (crq->wIndex == WINDEX_OS_FEATURE_EXT_PROPERTIES) {
-			memcpy(ep0_ctrl_buf, &desc_ext_properties_ms,
-				       sizeof(desc_ext_properties_ms));
+			safe_memcpy(ep0_ctrl_buf, USB_DMA_BUF_SIZE,
+				    &desc_ext_properties_ms,
+				    sizeof(desc_ext_properties_ms));
 			usb_req_ctx.length = sizeof(desc_ext_properties_ms);
 			return USBD_REQ_HANDLED;
 		}
@@ -699,6 +826,7 @@ static int vhub_vendor_request(struct usb_ctrlrequest *crq)
 
 static uint8_t vhub_ep0_setup(void)
 {
+	struct usb_vhub_config *usb = &usb_cfg[usb_vhub_port];
 	struct usb_ctrlrequest crq = usb_req_ctx.crq;
 	uint32_t data_size_max, mps;
 	uint32_t len, act, chunk;
@@ -708,7 +836,9 @@ static uint8_t vhub_ep0_setup(void)
 
 	vhub_req_cleanup();
 
-	memcpy(&crq, (void *)(VHUB_BASE + VHUB_SETUP0), sizeof(struct usb_ctrlrequest));
+	safe_memcpy(&crq, sizeof(struct usb_ctrlrequest),
+		    (void *)(usb->base + VHUB_SETUP0),
+		    sizeof(struct usb_ctrlrequest));
 
 	if ((crq.bRequestType & USB_TYPE_MASK) == USB_TYPE_STANDARD)
 		ret = vhub_std_request(&crq);
@@ -784,15 +914,16 @@ bool usb_is_dnload_done(void)
 
 uint8_t usb_poll(void)
 {
+	struct usb_vhub_config *usb = &usb_cfg[usb_vhub_port];
 	uint32_t istat;
 	uint8_t ret;
 
-	istat = readl(VHUB_BASE + VHUB_ISR);
+	istat = readl(usb->base + VHUB_ISR);
 	if (!istat)
 		return 0;
 
 	/* Ack interrupts */
-	writel(istat, VHUB_BASE + VHUB_ISR);
+	writel(istat, usb->base + VHUB_ISR);
 
 	if (istat & VHUB_IRQ_HUB_EP0_IN_ACK_STALL) {
 		ret = vhub_ep0_in();
@@ -815,55 +946,258 @@ uint8_t usb_poll(void)
 	return 0;
 }
 
-void usb_enable(void)
+void usb_pinctrl(void)
 {
+	struct usb_vhub_config *usb = &usb_cfg[usb_vhub_port];
 	uint32_t val;
 
-	/* Clear USB mode status */
-	val = readl(SCU0_REG + SCU_USB_MULTI_CTRL);
-	val = val & ~GENMASK(25, 24);
-	val = val & ~GENMASK(3, 2);
+	val = readl(usb->scu_multi_func);
 
-	/* Select USB2.0 Hub1 as device */
-	writel(val | BIT(2), SCU0_REG + SCU_USB_MULTI_CTRL);
+	val = val & ~(usb->func_mask);
 
-	/* Enable vhub reset */
-	val = readl(SCU0_REG + SCU_RST_CTRL);
-	writel(val | BIT(0), SCU0_REG + SCU_RST_CTRL);
+	if (usb_vhub_port == PORT_C && usb_uart_enabled == true) {
+		/* Switch PortC from Mode-1 (vHUB only) to Mode-0 (UART + vHUB) */
+		usb->func_bits &= ~GENMASK(1, 0);
+	}
 
+	writel(val | usb->func_bits, usb->scu_multi_func);
+}
+
+void usb_clk_enable_reset(enum usb_port port)
+{
+	struct usb_vhub_config *usb = &usb_cfg[port];
+
+	/* Enable reset */
+	writel(usb->reset_bits, usb->scu_reset);
+
+	/* Enable (clear stop) clock */
+	writel(usb->clock_bits, usb->scu_clock);
+
+	/* Wait PLL locking */
 	mdelay(10);
 
-	/* disable vhub reset */
-	writel(BIT(0), SCU0_REG + SCU_RST_CTRL + 0x4);
+	/* Disable reset */
+	writel(usb->reset_bits, usb->scu_reset + 0x4);
+}
+
+static void usb2uart_parse_otp(struct usb_uart_cfg *cfg)
+{
+	uint64_t otp = 0;
+	uint32_t val;
+
+	val = readl(SCU1_OTPCFG_17_16);
+	val = val >> 16;
+	*(uint16_t *)&otp = (uint16_t)val;
+
+	val = readl(SCU1_OTPCFG_19_18);
+	*((uint32_t *)((uint8_t *)&otp + 2)) = val;
+
+	for (int i = 0; i < OTP_USB_UART_NUM; i++) {
+		/* No UART OTP config. for UART13/14. The last UART OTP config. is for UART15 */
+		if (i == (OTP_USB_UART_NUM - 1)) {
+			cfg->usb_uart[USB_UART_NUM - 1].mode = otp & 3;
+			cfg->usb_uart[USB_UART_NUM - 1].tx_discard_off = (otp >> 2) & 1;
+		} else {
+			cfg->usb_uart[i].mode = otp & 3;
+			cfg->usb_uart[i].tx_discard_off = (otp >> 2) & 1;
+		}
+		otp = otp >> 3;
+	}
+	cfg->hub_23ports = otp & 1;
+	otp >>= 1;
+	cfg->mode3 = otp & 1;
+	otp >>= 1;
+	cfg->put_all_msg = otp & 1;
+}
+
+static bool usb2uart_check_enabled(struct usb_uart_cfg *cfg)
+{
+	for (int i = 0; i < USB_UART_NUM; i++)
+		if (cfg->usb_uart[i].mode != USB_UART_MODE_0)
+			return true;
+	return false;
+}
+
+bool usb2uart_put_all_msg(void)
+{
+	if (readl(SCU1_OTPCFG_19_18) & SCU1_OTPCFG19_USB2UART_ALL_MSG)
+		return true;
+	else
+		return false;
+}
+
+bootstage_t usb2uart_init(struct rom_context *rom_ctx)
+{
+	bootstage_t sts = { BOOTSTAGE_ERR_SUCCESS, 0 };
+	struct usb_vhub_config *usb;
+	uint32_t scu, val;
+	struct usb_uart_cfg cfg;
+
+	memset(&cfg, 0, sizeof(cfg));
+	usb2uart_parse_otp(&cfg);
+
+	usb_uart_enabled = usb2uart_check_enabled(&cfg);
+	if (usb_uart_enabled) {
+		/* Only PORTC supports USB2UART */
+		usb = &usb_cfg[PORT_C];
+
+		usb_clk_enable_reset(PORT_C);
+
+		/* Set 16 bits UTMI for FPGA */
+#ifdef CONFIG_FPGA_ASPEED
+		scu = readl(usb->base + 0x800);
+		writel(scu & ~BIT(8), usb->base + 0x800);
+#endif
+
+		/* Configure USB2COM mode */
+		val = 0;
+		for (int i = 0; i < USB_UART_NUM; i++) {
+			if (cfg.usb_uart[i].mode == USB_UART_MODE_1)
+				val = val | (UART_REAL_CONNCET << (2 * i));
+			else if (cfg.usb_uart[i].mode == USB_UART_MODE_2)
+				val = val | (UART_PSEUDO_CONNCET << (2 * i));
+		}
+		writel(val, usb->base + 0x810);
+
+		/* Configure TXDiscard (Turn on by default in the BROM code, not HW values) */
+		val = 0;
+		for (int i = 0; i < 8; i++) {
+			if (cfg.usb_uart[i].tx_discard_off)
+				val = val | (0 << (4 * i));
+			else
+				val = val | (1 << (4 * i));
+		}
+		writel(val, usb->base + 0x814);
+
+		val = 0;
+		for (int i = 8; i < USB_UART_NUM; i++) {
+			if (cfg.usb_uart[i].tx_discard_off)
+				val = val | (0 << (4 * (i - 8)));
+			else
+				val = val | (1 << (4 * (i - 8)));
+		}
+		writel(val, usb->base + 0x818);
+
+		/* Configure USB2COM device connected and hub w/ 23 or 15 ports on HUB */
+		val = 0;
+		for (int i = 0; i < USB_UART_NUM; i++)
+			if (cfg.usb_uart[i].mode != USB_UART_MODE_0)
+				val = val | (1 << (1 * i));
+		val = val << 16;
+		if (cfg.hub_23ports == 1)
+			val = val | BIT(31);
+		writel(val, usb->base + 0x81c);
+
+		/* Set SCU to switch into Mode-0 (UART + vHUB) or Mode-3 (UART only) */
+		scu = readl(usb->scu_multi_func);
+		scu = scu & ~(usb->func_mask);
+		usb->func_bits &= ~GENMASK(1, 0);
+		if (cfg.mode3 == 1)
+			usb->func_bits |= (BIT(0) | BIT(1));
+		writel(scu | usb->func_bits, usb->scu_multi_func);
+
+		//[TODO]: Test how much delay can make first character outputs
+		//mdelay(1000);
+	}
+	return sts;
+}
+
+int usb_enable(void)
+{
+	struct usb_vhub_config *usb;
+	uint32_t val, reg;
+
+	reg = readl(SCU1_HWSTRAP1);
+	usb_vhub_port = FIELD_GET(SCU1_HWSTRAP1_RECOVERY_USB_PORT, reg);
+
+	/* Select the usb configuration */
+	usb = &usb_cfg[usb_vhub_port];
+
+	/* Configure PinCtrl for USB vhub function */
+	usb_pinctrl();
+
+	/* vHUB controller clock enable and reset */
+	usb_clk_enable_reset(usb_vhub_port);
 
 	udelay(1);
 
-	/* Set 16 bits UTMI */
-	val = readl(VHUB_BASE + 0x800);
-	writel(val & ~BIT(8), VHUB_BASE + 0x800);
+#ifdef CONFIG_FPGA_ASPEED
+	/* Set 16 bits UTMI for FPGA */
+	val = readl(usb->base + 0x800);
+	writel(val & ~BIT(8), usb->base + 0x800);
+#endif
 
 	/* Enable SRAM access */
-	val = readl(VHUB_BASE + 0x800);
-	writel(val | BIT(4), VHUB_BASE + 0x800);
+	val = readl(usb->base + 0x800);
+	if (usb_vhub_port == PORT_A || usb_vhub_port == PORT_B)
+		/* vHUBA & vHUBB. CPU Die: BIT4 for SRAM access */
+		writel(val | BIT(4), usb->base + 0x800);
+	else if (usb_vhub_port == PORT_C || usb_vhub_port == PORT_D)
+		/* vHUBC & vHUBD. I/O Die: BIT10 for SRAM access, BIT5 for AHBM Addr 34 */
+		writel(val | BIT(10) | BIT(5), usb->base + 0x800);
 
 	/* Disable PHY reset */
 	val = VHUB_CTRL_PHY_CLK |
 	      VHUB_CTRL_PHY_RESET_DIS;
+	writel(val, usb->base + VHUB_CTRL);
+
+	/* SW reset device controller */
+	writel(VHUB_SW_RESET_ROOT_HUB, usb->base + VHUB_SW_RESET);
+	udelay(1);
+	writel(0, usb->base + VHUB_SW_RESET);
 
 	/* Enable upstream port connection */
 	val |= VHUB_CTRL_UPSTREAM_CONNECT;
-	writel(val, VHUB_BASE + VHUB_CTRL);
-
-	/* SW reset device controller */
-	writel(VHUB_SW_RESET_ROOT_HUB, VHUB_BASE + VHUB_SW_RESET);
-	udelay(1);
-	writel(0, VHUB_BASE + VHUB_SW_RESET);
+	writel(val, usb->base + VHUB_CTRL);
 
 	/* enable interrupts */
 	writel(VHUB_IRQ_HUB_EP0_IN_ACK_STALL |
 	       VHUB_IRQ_HUB_EP0_OUT_ACK_STALL |
 	       VHUB_IRQ_HUB_EP0_SETUP |
 	       VHUB_IRQ_BUS_RESUME |
-	       VHUB_IRQ_BUS_SUSPEND |
-	       VHUB_IRQ_BUS_RESET, VHUB_BASE + VHUB_IER);
+	       VHUB_IRQ_BUS_RESET, usb->base + VHUB_IER);
+	return 0;
+}
+
+/*
+ * from: don't care.
+ * *dst: destination address to move to
+ * len: required length, if not equal, return failre
+ */
+static int usb_recovery(u32 from, u32 *dst, u32 len)
+{
+	int ret;
+
+	if (!sli_get_availability())
+		return STS_SLI_UNAVAIL;
+
+	/* Save this time DFU destination and max. length */
+	dfu_dst_addr = dst;
+	dfu_max_len = len;
+
+	while (1) {
+		ret = usb_poll();
+		if (ret)
+			break;
+
+		if (usb_is_dnload_done())
+			break;
+	}
+	/* Reset 'is_dnload_done flag' and dfu state/status for the next DL */
+	is_dnload_done = false;
+	dfu_data.state = dfuIDLE;
+	dfu_data.status = statusOK;
+	return ret;
+}
+
+static struct bootdev_ops usb_ops = {
+	.init = usb_enable,
+	.read = usb_recovery,
+	.deinit = NULL,
+};
+
+void usb_register(struct bootdev *bd)
+{
+	bd->id = BOOT_USB;
+	bd->ops = &usb_ops;
 }

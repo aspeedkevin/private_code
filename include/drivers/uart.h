@@ -73,6 +73,7 @@ int uart_configure(struct uart *uart, struct uart_cfg *cfg);
 int uart_poll_in(struct uart *uart, uint8_t *byte);
 int uart_poll_in_forever(struct uart *uart, uint8_t *byte);
 int uart_poll_out(struct uart *uart, uint8_t byte);
+int uart_poll_out_forever(struct uart *uart, uint8_t byte);
 int uart_init(uintptr_t base, struct uart *uart);
 
 #endif

@@ -1,3 +1,5 @@
+#include <csr.h>
+#include <drivers/scu.h>
 #include <platform.h>
 
 .global lowlevel_init
@@ -7,16 +9,16 @@ lowlevel_init:
 	sw	t1, 0(t0)
 
 	/* check Dis_ROM by SCU1_010[22] */
-	li	t0, SCU1_REG
-	lw	t0, 16(t0)
-	li	t1, (0x1 << 22)
+	li	t0, SCU1_HWSTRAP1
+	lw	t0, (t0)
+	li	t1, SCU1_HWSTRAP1_DIS_ROM
 	and	t0, t0, t1
 	beqz	t0, 1f
 
 	/* copy SRAM code */
 	li	t0, FMC_MEM_L
-	li	t1, CONFIG_RAM_CODE_LOAD_ADDR
-	li	t2, CONFIG_RAM_CODE_LOAD_SIZE
+	li	t1, CONFIG_FMC_LOAD_ADDR
+	li	t2, CONFIG_FMC_LOAD_SIZE
 	add	t2, t2, t1
 
 copy_sram_loop:
@@ -28,8 +30,25 @@ copy_sram_loop:
 
 copy_sram_done:
 	/* jump to SRAM code */
-	li	t0, CONFIG_RAM_CODE_ENTRY_ADDR
+	li	t0, CONFIG_FMC_ENTRY_ADDR
 	jr	0(t0)
 
 1:
+	li	t0,	SCU1_HWSTRAP1
+	lw	t0, (t0)
+	li	t1, SCU1_HWSTRAP1_EN_ROM_INT
+	and	t0, t0, t1
+	beqz	t0, 2f
+
+	/* clear & disable enable machine interrupts */
+	li	t0, MIE_MEI | MIE_MTI | MIE_MSI
+	csrc	mie, t0
+
+	li	t0, MIP_MEI | MIP_MTI | MIP_MSI
+	csrc	mip, t0
+
+	/* enable machine global interrupt */
+	csrsi	mstatus, MSTATUS_MIE
+
+2:
 	ret

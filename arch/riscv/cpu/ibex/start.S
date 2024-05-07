@@ -8,7 +8,7 @@
 .global _vector_table
 _vector_table:
 .rept 32
-j	_exception_handler
+j	exception_handler
 .endr
 .size _vector_table, .-_vector_table
 
@@ -59,7 +59,8 @@ copy_data_done:
 	jal	main
 
 	/* should never reach */
-_exception_handler:
+.weak exception_handler
+exception_handler:
 wfi_loop:
 	wfi
 	j	wfi_loop

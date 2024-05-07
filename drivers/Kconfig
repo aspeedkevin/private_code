@@ -10,13 +10,6 @@ config OTP
 	help
 	  Say 'y' to enable Aspeed OTP
 
-config DRAM
-	bool "DRAM"
-	help
-	  Say 'y' to enable DRAMC and DDRPHY
-
-source "drivers/dram/Kconfig"
-
 config SLI
 	bool "SLI"
 	help
@@ -47,13 +40,50 @@ config WDT
 	help
 	  Say 'y' to enable WDT support
 
-config PCIE
-	bool "PCIE"
+config UFS
+	bool "UFS"
 	help
-	  Say 'y' to enable PCIE support
+	  Say 'y' to enable UFS support
 
+config CALIPTRA
+	bool "Caliptra"
+	help
+	  Say 'y' to enable Caliptra support
+
+config TRNG
+	bool "TRNG"
+	help
+	  Say 'y' to enable TRNG support
+
+config SEC
+	bool "SEC"
+	help
+	  Say 'y' to enable SEC support
+
+config I3C
+	bool "I3C"
+	help
+	  Say 'y' to enable I3C support
+
+config I2C
+	bool "I2C"
+	help
+	  Say 'y' to enable I2C support
+
+config AHBC
+	bool "AHBC"
+	help
+	  Say 'y' to enable AHBC support
+
+config TIMER
+	bool "Timer"
+	help
+	  Say 'y' to enable timer support
+
+source "drivers/caliptra/Kconfig"
 source "drivers/uart/Kconfig"
 source "drivers/spi/Kconfig"
 source "drivers/sli/Kconfig"
+source "drivers/timer/Kconfig"
 
 endmenu

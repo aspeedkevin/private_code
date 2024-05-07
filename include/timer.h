@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0+ */
 #ifndef __TIMER_H__
 #define __TIMER_H__
 

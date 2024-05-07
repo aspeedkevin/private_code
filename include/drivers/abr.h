@@ -1,11 +1,7 @@
-/* SPDX-License-Identifier: Apache-2.0 */
-/*
- * Copyright (c) 2023 ASPEED Technology Inc.
- */
-
 #ifndef __ABR_H__
 #define __ABR_H__
 
+#include <rom_context.h>
 #include <types.h>
 #include <utils.h>
 
@@ -14,30 +10,20 @@
 #define ABR_EXT_SIGNAL_EN	BIT(2)
 #define ABR_INFO_CLR		0xea000000
 
-enum flash_abr_mode {
-	DUAL_FLASH_ABR = 0,
-	SINGLE_FLASH_ABR,
+struct abr {
+	/* common */
+	uint32_t enabled;
+	uint32_t boot_indicator;
+	uint32_t wdta_triggered;
+	uint32_t abr_rc_dis;
+
+	/* spi dedicate */
+	uint32_t single;
+	uint32_t auxpin_enabled;
+	uint32_t auxpin_val;
+	uint32_t boot_cs;
+	uint32_t cs_swap;
 };
 
-struct flash_abr_info {
-	/* FWSPI flash, eMMC and UFS */
-	uint32_t abr_boot_indicator;
-	uint32_t wdta_timeout_occur;
-
-	/* FWSPI flash */
-	enum flash_abr_mode mode;
-	uint32_t fmc_boot_cs;
-	bool fmc_cs_swap;
-};
-
-bool abr_enable(void);
-uint32_t get_abr_indictor(void);
-bool spi_flash_cs_swap_occur(void);
-enum flash_abr_mode get_spi_flash_abr_mode(void);
-void abr_early_init(struct flash_abr_info *abr_info);
-void abr_post_init(void);
-bool fwspi_auxpin_enable(void);
-bool ext_abr_signal(void);
-void abr_wdta_reconfig(void);
-
+struct abr *abr_create(struct rom_context *rc);
 #endif

@@ -138,17 +138,24 @@ typedef __PTRDIFF_TYPE__ ptrdiff_t;
 #define EOF (-1)
 /* From stdio.h */
 
+#define ___swab32(x)			BSWAP_32(x)
+
 #define __packed			__attribute__((__packed__))
 #define __aligned(x)			__attribute__((aligned(x)))
+#define __section(x)			__attribute__((__section__(x)))
 
 #define cpu_to_le16			__cpu_to_le16
 #define le16_to_cpu			__le16_to_cpu
 #define cpu_to_le32			__cpu_to_le32
 #define le32_to_cpu			__le32_to_cpu
+#define cpu_to_be32			__cpu_to_be32
+#define be32_to_cpu			__be32_to_cpu
 
 #define __le16_to_cpu(x)		((__le16)(x))
 #define __cpu_to_le16(x)		((__u16)(x))
 #define __le32_to_cpu(x)		((__le32)(x))
+#define __cpu_to_be32(x)		((__be32)___swab32(x))
+#define __be32_to_cpu(x)		((__be32)___swab32(x))
 #define __cpu_to_le32(x)		((__u32)(x))
 
 #endif

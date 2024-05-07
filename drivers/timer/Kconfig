@@ -1,0 +1,8 @@
+if TIMER
+
+config RV_TIMER
+	bool "RISC-V compatible timer"
+	help
+	  Say 'y' to enable timer support for RISC-V cores.
+
+endif

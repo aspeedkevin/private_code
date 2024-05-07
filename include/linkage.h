@@ -1,8 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0+ */
-/*
- * Copyright (c) Aspeed Technology
- */
-
 #ifndef __LINKAGE_H__
 #define __LINKAGE_H__
 

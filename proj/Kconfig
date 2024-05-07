@@ -11,6 +11,8 @@ config PROJ_AST2700_ROM
 	select ARCH_RISCV
 	select CPU_IBEX
 	select PLAT_AST2700
+	select TIMER
+	select RV_TIMER
 	help
 	  Say 'y' to build AST2700 ROM code
 

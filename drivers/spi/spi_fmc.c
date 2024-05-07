@@ -1,38 +1,41 @@
-// SPDX-License-Identifier: Apache-2.0
-/*
- * Copyright (c) 2023 ASPEED Technology Inc.
- */
-
-#include <drivers/abr.h>
 #include <boot.h>
+#include <drivers/abr.h>
+#include <drivers/scu.h>
 #include <drivers/spi.h>
-#include <flash.h>
+#include <drivers/wdt.h>
 #include <io.h>
+#include <lib/printf.h>
+#include <lib/string.h>
 #include <platform.h>
+
+struct spi {
+	struct bootdev *bd;
+	uint32_t cs;
+	uint32_t flash_sz;
+	uint32_t abr_ofst;
+};
+
+static struct spi g_spi;
 
 /*
  * The rule of FMC30 is,
  * start_addr <= decoding_range < end_addr.
  */
-uint32_t spi_fmc_segment_addr_start(uint32_t reg_val)
+static uint32_t spi_fmc_segment_addr_start(uint32_t reg_val)
 {
 	return (((reg_val) & 0x0000ffff) << 16);
 }
 
-uint32_t spi_fmc_segment_addr_end(uint32_t reg_val)
-{
-	return (reg_val & 0xffff0000) - 1;
-}
-
-uint32_t spi_fmc_segment_addr_val(uint32_t start, uint32_t end)
+static uint32_t spi_fmc_segment_addr_val(uint32_t start, uint32_t end)
 {
 	return ((((start) >> 16) & 0xffff) | ((end + 1) & 0xffff0000));
 }
 
-uint8_t spi_fmc_read_status_cmd(uint32_t cs)
+static uint8_t spi_fmc_read_status_cmd(uint32_t cs)
 {
 	uint8_t status;
-	uint32_t ce_ctrl_val;
+	uint32_t ctrl_val;
+	uint32_t ctrl_val_bak;
 	uint32_t addr_decoding_val;
 	uint32_t addr;
 
@@ -45,20 +48,22 @@ uint8_t spi_fmc_read_status_cmd(uint32_t cs)
 		addr = FMC_MEM_H;
 
 	/* Configure to command read mode. */
-	ce_ctrl_val = readl(FMC_REG + CE0_CTRL + cs * 4);
-	ce_ctrl_val &= FMC_CLK_FREQ_MASK;
-	ce_ctrl_val |= (((0x05) << 16) | 0x01);
-	writel(ce_ctrl_val, FMC_REG + CE0_CTRL + cs * 4);
-
+	ctrl_val = readl(FMC_REG + CE0_CTRL + cs * 4);
+	ctrl_val_bak = ctrl_val;
+	ctrl_val &= FMC_CLK_FREQ_MASK;
+	ctrl_val |= (((0x05) << 16) | 0x1);
+	writel(ctrl_val, FMC_REG + CE0_CTRL + cs * 4);
 	/* Only enable data byte 0. */
 	writel(0xfe, FMC_REG + ADDR_DATA_CTRL);
 
 	status = readb(addr);
 
-	/* Restore to normal mode */
-	ce_ctrl_val &= FMC_CLK_FREQ_MASK;
-	writel(ce_ctrl_val, FMC_REG + CE0_CTRL + cs * 4);
+	/* Force to inactivate CS signal. */
+	ctrl_val = (ctrl_val & FMC_CLK_FREQ_MASK) | 0x7;
+	writel(ctrl_val, FMC_REG + CE0_CTRL + cs * 4);
 
+	/* Restore FMC10. */
+	writel(ctrl_val_bak, FMC_REG + CE0_CTRL + cs * 4);
 	/* Restore FMC0C to default value. */
 	writel(0x0, FMC_REG + ADDR_DATA_CTRL);
 
@@ -69,11 +74,14 @@ uint8_t spi_fmc_read_status_cmd(uint32_t cs)
  * If SCU010[24], OTPSTRAP[25], is set, FMC will check
  * SPI flash ready bit before it accesses SPI flash.
  */
-void spi_fmc_wait_for_ready(uint32_t cs)
+static void spi_fmc_wait_for_ready(uint32_t cs)
 {
 	uint8_t status;
-	/* timeout after about 512ms with 12.5MHz SPI clock */
-	int count = 400000;
+	/* timeout after about
+	 * 1.2 seconds: 50MHz SPI clock
+	 * 5.1 seconds: 12.5MHz SPI clock
+	 */
+	int count = 4000000;
 	uint32_t scu_wait_for_ready;
 
 	scu_wait_for_ready = readl(SCU1_REG + 0x010) & BIT(24);
@@ -86,6 +94,76 @@ void spi_fmc_wait_for_ready(uint32_t cs)
 			count--;
 		else
 			break;
+	}
+}
+
+static uint32_t spi_fmc_read_sfdp(uint32_t cs)
+{
+	uint32_t sfdp;
+	uint32_t ctrl_val;
+	uint32_t ctrl_val_bak;
+	uint32_t addr_decoding_val;
+	uint32_t addr;
+
+	addr_decoding_val = readl(FMC_REG + CE0_ADDR_DECODING + cs * 4);
+	addr = spi_fmc_segment_addr_start(addr_decoding_val);
+
+	if (addr < SNOR_SZ_256MB)
+		addr = FMC_MEM_L;
+	else
+		addr = FMC_MEM_H;
+
+	/* Configure to command read mode. */
+	ctrl_val = readl(FMC_REG + CE0_CTRL + cs * 4);
+	ctrl_val_bak = ctrl_val;
+	ctrl_val &= FMC_CLK_FREQ_MASK;
+	/* cmd: 5Ah, dummy: 1 byte (8 clocks) */
+	ctrl_val |= (((0x5a) << 16) | BIT(6) | 0x1);
+	writel(ctrl_val, FMC_REG + CE0_CTRL + cs * 4);
+	/* Force the controller to transmit 3-byte address length. */
+	writel(0x80, FMC_REG + ADDR_DATA_CTRL);
+
+	sfdp = readl(addr);
+
+	/* Force to inactivate CS signal. */
+	ctrl_val = (ctrl_val & FMC_CLK_FREQ_MASK) | 0x7;
+	writel(ctrl_val, FMC_REG + CE0_CTRL + cs * 4);
+
+	/* Restore FMC10. */
+	writel(ctrl_val_bak, FMC_REG + CE0_CTRL + cs * 4);
+	/* Restore FMC0C to default value. */
+	writel(0x0, FMC_REG + ADDR_DATA_CTRL);
+
+	return sfdp;
+}
+
+/*
+ * If SCUIO_030[25], OTPSTRAP_EXT[57], is set, FMC will check
+ * whether the flash is in reset state before accessing it.
+ * Here, SFDP magic number is used to decide whether
+ * flash is ready from the reset state.
+ */
+static void spi_fmc_check_access(uint32_t cs)
+{
+	uint32_t sfdp_magic;
+	/* timeout after about
+	 * 1.2 seconds: 50MHz SPI clock
+	 * 4.6 seconds: 12.5MHz SPI clock
+	 */
+	int count = 800000;
+	uint32_t scu_check_access;
+
+	scu_check_access = readl(SCU1_REG + 0x030) &
+			   SCU1_HWSTRAP2_CHECK_FLASH_ACCESS;
+	if (scu_check_access == 0)
+		return;
+
+	while (count > 0) {
+		sfdp_magic = spi_fmc_read_sfdp(cs);
+		if (sfdp_magic == SNOR_SFDP_MAGIC)
+			break;
+
+		count--;
 	}
 }
 
@@ -108,28 +186,13 @@ static void spi_fmc_addr_mode_init(uint32_t cs, uint32_t flash_sz)
 }
 
 /*
- * Set SPI clock frequency to 12.5MHz.
- * FMC10[27:24] = 4b'0000
- * FMC10[11:8] = 4b'0000
- */
-static void spi_fmc_clk_init(uint32_t cs)
-{
-	uint32_t fmc_clk_ctrl_reg;
-
-	fmc_clk_ctrl_reg = readl(FMC_REG + CE0_CTRL + cs * 4);
-	fmc_clk_ctrl_reg &= ~(FMC_CLK_FREQ_MASK);
-
-	writel(fmc_clk_ctrl_reg, FMC_REG + CE0_CTRL + cs * 4);
-}
-
-/*
  * SCU030[24:23]
  * 2b'00: 12.5MHz (HCLK / 16)
  * 2b'01: 25MHz (HCLK / 8)
  * 2b'10: 40MHz (HCLK / 5)
  * 2b'11: 50MHz (HCLK / 4)
  */
-void spi_fmc_clk_freq_adjust(uint32_t cs)
+static void spi_fmc_clk_freq_adjust(uint32_t cs)
 {
 	uint32_t scu_fmc_clk_val;
 	uint32_t fmc_clk_ctrl_reg;
@@ -170,7 +233,7 @@ void spi_fmc_clk_freq_adjust(uint32_t cs)
  * 1: 8MB
  * 0: disabled
  */
-uint32_t spi_fmc_get_flash_sz_strap(void)
+static uint32_t spi_fmc_get_flash_sz_strap(void)
 {
 	uint32_t scu_flash_sz;
 	uint32_t flash_sz_phy;
@@ -209,9 +272,9 @@ uint32_t spi_fmc_get_flash_sz_strap(void)
 	return flash_sz_phy;
 }
 
-void spi_fmc_decoding_range_config(uint32_t cs,
-				   uint32_t start_addr,
-				   uint32_t end_addr)
+static void spi_fmc_decoding_range_config(uint32_t cs,
+					  uint32_t start_addr,
+					  uint32_t end_addr)
 {
 	uint32_t decoding_reg_val;
 
@@ -220,62 +283,65 @@ void spi_fmc_decoding_range_config(uint32_t cs,
 	writel(decoding_reg_val, FMC_REG + CE0_ADDR_DECODING + cs * 4);
 }
 
-void spi_fmc_decoding_range_early_init(void)
+/* For dual flash ABR, CS swap function can be
+ * configured by the signal in WDT controller.
+ */
+static void spi_fmc_cs_swap_enable(void)
 {
-	spi_fmc_decoding_range_config(0, 0, SNOR_SZ_256MB);
-	spi_fmc_decoding_range_config(1, SNOR_SZ_256MB, SNOR_SZ_256MB * 2);
-	spi_fmc_decoding_range_config(2, 0, 0);
+	uint32_t reg_val;
+
+	reg_val = readl(FMC_REG + CS_SWAP_CRTL);
+	reg_val |= CS_SWAP_BY_WDT;
+	writel(reg_val, FMC_REG + CS_SWAP_CRTL);
+
+	/* Keep the CS swap control register
+	 * settings after WDT SoC reset.
+	 */
+	reg_val = readl(FMC_REG + FMC_RST_WLOCK1);
+	reg_val |= CS_SWAP_CTRL_RST_LOCK;
+	writel(reg_val, FMC_REG + FMC_RST_WLOCK1);
 }
 
-void spi_fmc_init_f(uint32_t cs)
+static void spi_fmc_cs_swap(void)
 {
-	uint32_t flash_sz;
+	uint32_t reg_val;
 
-	flash_sz = spi_fmc_get_flash_sz_strap();
-
-	spi_fmc_decoding_range_early_init();
-	spi_fmc_addr_mode_init(cs, flash_sz);
-	spi_fmc_clk_init(cs);
-	spi_fmc_wait_for_ready(cs);
+	reg_val = readl(WDT_ABR(WDT_DEVA));
+	reg_val |= WDT_ABR_FMC_CS_SWAP;
+	writel(reg_val, WDT_ABR(WDT_DEVA));
 }
 
-int spi_fmc_init_r(uint32_t cs, uint32_t abr_enabled, uint32_t auxpin_abr_enabled, uint32_t abr_single)
+static void spi_fmc_init(struct spi *spi)
 {
-	int ret = 0;
-	uint32_t flash_sz;
+	struct bootdev *bd = spi->bd;
+	struct abr *abr = bd->abr;
 	struct decoding_range ce_decoding_range[2];
-
-	flash_sz = spi_fmc_get_flash_sz_strap();
-
-	/* Config address mode according to flash size. */
-	spi_fmc_addr_mode_init(cs, flash_sz);
+	uint32_t flash_sz = spi->flash_sz;
 
 	/* Config address decoding ranges. */
-	if (abr_enabled || auxpin_abr_enabled) {
-		/*
-		 * Don't get abr_mode from the argument abr_info directly
-		 * since abr_info is assigned in abr_early_init(), but its
-		 * value may be modified in the flash strap.
-		 */
-		if (abr_single) {
+	if (abr) {
+		if (abr->single) {
 			/* Single flash ABR */
 			if (flash_sz == SNOR_SZ_UNSET) {
-				ret = (uint8_t)ERROR_INVALID_FLASH_SZ;
-
 				/*
 				 * Force to assign an acceptable
 				 * address decoding range.
 				 */
 				ce_decoding_range[0].start_addr = 0x0;
-				ce_decoding_range[0].end_addr = SNOR_SZ_64MB;
+				ce_decoding_range[0].end_addr = SNOR_SZ_256MB;
 				ce_decoding_range[1].start_addr = 0x0;
 				ce_decoding_range[1].end_addr = 0x0;
+				flash_sz = SNOR_SZ_256MB;
 			} else {
 				ce_decoding_range[0].start_addr = 0x0;
 				ce_decoding_range[0].end_addr = flash_sz;
 				ce_decoding_range[1].start_addr = 0x0;
 				ce_decoding_range[1].end_addr = 0x0;
 			}
+
+			if (abr->boot_indicator)
+				spi->abr_ofst = (ce_decoding_range[0].end_addr) / 2;
+
 		} else {
 			/* Dual flash ABR */
 			if (flash_sz == SNOR_SZ_UNSET) {
@@ -283,12 +349,21 @@ int spi_fmc_init_r(uint32_t cs, uint32_t abr_enabled, uint32_t auxpin_abr_enable
 				ce_decoding_range[0].end_addr = SNOR_SZ_256MB;
 				ce_decoding_range[1].start_addr = SNOR_SZ_256MB;
 				ce_decoding_range[1].end_addr = SNOR_SZ_256MB * 2;
-
 			} else {
 				ce_decoding_range[0].start_addr = 0x0;
 				ce_decoding_range[0].end_addr = flash_sz;
 				ce_decoding_range[1].start_addr = flash_sz;
 				ce_decoding_range[1].end_addr = flash_sz * 2;
+			}
+
+			/* boot from CS1 directly */
+			if (abr->boot_indicator && !abr->cs_swap)
+				spi->abr_ofst = ce_decoding_range[0].end_addr;
+
+			/* boot from CS1 by HW address mapping automatically */
+			if (abr->boot_indicator && abr->cs_swap) {
+				spi_fmc_cs_swap_enable();
+				spi_fmc_cs_swap();
 			}
 		}
 	} else {
@@ -313,21 +388,109 @@ int spi_fmc_init_r(uint32_t cs, uint32_t abr_enabled, uint32_t auxpin_abr_enable
 	/* Always close CS2 window */
 	spi_fmc_decoding_range_config(2, 0x0, 0x0);
 
-	spi_fmc_clk_freq_adjust(cs);
-
-	return ret;
+	/* Config address mode according to flash size. */
+	spi_fmc_addr_mode_init(spi->cs, flash_sz);
+	spi_fmc_clk_freq_adjust(spi->cs);
+	spi_fmc_wait_for_ready(spi->cs);
+	spi_fmc_check_access(spi->cs);
 }
 
-void fmc_reg_reset_config(void)
+static int spi_get_syndrome(struct abr *abr)
 {
-	uint32_t soc_id;
-	uint32_t reg_val;
+	uint32_t syndrome = 0;
 
-	soc_id = readl(SCU1_REG) & GENMASK(23, 16);
+	if (!abr)
+		return syndrome;
 
-	/* Unnecessary for AST2700-A0 */
-	if (soc_id != 0) {
-		reg_val = readl(FMC_REG + FMC_RST_LOCK);
-		writel(reg_val | BIT(1), FMC_REG + FMC_RST_LOCK);
+	/* [7]: reserved
+	 * [6]: cs swap occurs
+	 * [5]: boot cs
+	 * [4]: auxpin gpio value
+	 *
+	 * [3]: recovery mode is disabled when ABR failed
+	 * [2]: wdta is triggered
+	 * [1]: ABR indicator is set
+	 * [0]: ABR enabled bit
+	 */
+	syndrome |= (abr->enabled & 0x1) << 0;
+	syndrome |= (abr->boot_indicator & 0x1) << 1;
+	syndrome |= (abr->wdta_triggered & 0x1) << 2;
+	syndrome |= (abr->abr_rc_dis & 0x1) << 3;
+	syndrome |= (abr->auxpin_val & 0x1) << 4;
+	syndrome |= (abr->boot_cs & 0x1) << 5;
+	syndrome |= (abr->cs_swap & 0x1) << 6;
+
+	return syndrome;
+}
+
+static int spi_init(void)
+{
+	struct spi *spi = &g_spi;
+	struct bootdev *bd = spi->bd;
+	struct abr *abr = bd->abr;
+	uint32_t cs_swap_dis;
+	int syndrome;
+
+	spi->flash_sz = spi_fmc_get_flash_sz_strap();
+	spi->cs = 0;
+	spi->abr_ofst = 0;
+	cs_swap_dis = !!(readl(SCU1_HWSTRAP2) & SCU1_HWSTRAP2_FMC_ABR_CS_SWAP_DIS);
+
+	if (abr) {
+		if (!abr->single && abr->boot_indicator) {
+			if (cs_swap_dis) {
+				abr->cs_swap = 0;
+				abr->boot_cs = 1;
+				spi->cs = 1;
+			} else {
+				abr->cs_swap = 1;
+				abr->boot_cs = 0;
+				spi->cs = 0;
+			}
+		}
 	}
+
+	spi_fmc_init(spi);
+
+	syndrome = spi_get_syndrome(abr);
+
+	return syndrome;
+}
+
+static int spi_read(u32 from, u32 *dst, u32 len)
+{
+	struct spi *spi = &g_spi;
+	uint32_t abr_ofst = spi->abr_ofst;
+
+	if (!dst)
+		return ERROR_INVALID_DST_PTR;
+
+	/*
+	 * From RV view, when the SPI flash accessed offset
+	 * is greater than 256MB, RV should access the other
+	 * FMC memory address space, FMC_MEM_H.
+	 */
+	if (abr_ofst < SNOR_SZ_256MB) {
+		memcpy(dst, (void *)(FMC_MEM_L + abr_ofst + from),
+		       len);
+	} else {
+		abr_ofst -= SNOR_SZ_256MB;
+		memcpy(dst, (void *)(FMC_MEM_H + abr_ofst + from),
+		       len);
+	}
+
+	return 0;
+}
+
+static struct bootdev_ops spi_ops = {
+	.init = spi_init,
+	.read = spi_read,
+};
+
+void spi_register(struct bootdev *bd)
+{
+	bd->id = BOOT_SPI;
+	bd->ops = &spi_ops;
+	bd->this = &g_spi;
+	g_spi.bd = bd;
 }

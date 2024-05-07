@@ -1,7 +1,3 @@
-/* SPDX-License-Identifier: Apache-2.0 */
-/*
- * Copyright (c) 2023 ASPEED Technology Inc.
- */
 #ifndef __GPIO_H__
 #define __GPIO_H__
 
@@ -34,6 +30,8 @@
 #define GPIO_PORT_AA		26
 #define GPIO_PORT_AB		27
 #define GPIO_PORT_AC		28
+#define GPIO_PORT_AD		29
+#define GPIO_PORT_AE		30
 
 /* number of pins in a port */
 #define N_PINS			8

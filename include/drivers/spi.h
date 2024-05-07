@@ -1,14 +1,10 @@
-/* SPDX-License-Identifier: Apache-2.0 */
-/*
- * Copyright (c) 2023 ASPEED Technology Inc.
- */
-
 #ifndef __SPI_H__
 #define __SPI_H__
 
-#include <drivers/abr.h>
+//#include <drivers/abr.h>
 #include <types.h>
 #include <utils.h>
+#include <bootdev.h>
 
 #define SNOR_SZ_UNSET		0x0
 #define SNOR_SZ_8MB		0x800000
@@ -24,28 +20,26 @@
 #define ADDR_CTRL		(0x04)
 #define ADDR_DATA_CTRL		(0x0C)
 #define CE0_CTRL		(0x10)
+#define   FMC_CLK_FREQ_MASK	(0x0f000f00)
+#define   CS_STOP_ACTIVE	(BIT(2))
+#define   USER_MODE		(0x3)
 #define CE0_ADDR_DECODING	(0x30)
-#define FMC_RST_LOCK		(0x1EC)
-
-/* CE control */
-#define FMC_CLK_FREQ_MASK	(0x0f000f00)
-#define CS_STOP_ACTIVE		(BIT(2))
-#define USER_MODE		(0x3)
+#define CS_SWAP_CRTL		(0xA0)
+#define   CS_SWAP_BY_WDT	(BIT(0))
+#define FMC_RST_WLOCK1		(0x1f4)
+#define   CS_SWAP_CTRL_RST_LOCK	(BIT(31))
 
 /* SPI error code */
 #define ERROR_INVALID_FLASH_SZ	0x1
+#define ERROR_INVALID_DST_PTR	0x2
+
+#define SNOR_SFDP_MAGIC		0x50444653 /* 0x50444653 is "SFDP" ASCII */
 
 struct decoding_range {
 	uint32_t start_addr;
 	uint32_t end_addr;
 };
 
-void spi_fmc_init_f(uint32_t cs);
-int spi_fmc_init_r(uint32_t cs, uint32_t abr_enabled, uint32_t auxpin_abr_enabled, uint32_t abr_single);
-uint32_t spi_fmc_segment_addr_start(uint32_t reg_val);
-uint32_t spi_fmc_segment_addr_end(uint32_t reg_val);
-void spi_fmc_decoding_range_config(uint32_t idx, uint32_t start_addr, uint32_t end_addr);
-uint32_t spi_fmc_get_flash_sz_strap(void);
-void fmc_reg_reset_config(void);
+void spi_register(struct bootdev *bd);
 
 #endif

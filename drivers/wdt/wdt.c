@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
-/*
- * Copyright (c) 2023 ASPEED Technology Inc.
- */
-
 #include <drivers/wdt.h>
 #include <drivers/scu.h>
 #include <io.h>
@@ -34,10 +29,10 @@ void wdt_disable(uint32_t dev_id)
 }
 
 /*
- * The HW default values of WDT reset mask are incorrect on AST2700.
+ * Some of HW default values of WDT reset mask are unexpected.
  * These values should be initialized before leaving BROM stage.
  */
-bootstage_t wdt_rstmask_init(void)
+bootstage_t wdt_rstmask_init(struct rom_context *rom_ctx)
 {
 	bootstage_t sts = { WDT_ERR_SUCCESS, 0 };
 	uint32_t idx, reg;
@@ -46,7 +41,7 @@ bootstage_t wdt_rstmask_init(void)
 	if (!(reg & SCU1_RSTLOG0_SRST))
 		return sts;
 
-	for (idx = 0; idx <= WDT_DEVS; idx++) {
+	for (idx = 0; idx < WDT_DEVS; idx++) {
 		/* SoC reset mask */
 		writel(WDT_RSTMASK_1_VAL, WDT_RSTMASK1(idx));
 		writel(WDT_RSTMASK_2_VAL, WDT_RSTMASK2(idx));

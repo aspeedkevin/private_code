@@ -18,14 +18,14 @@
 #define clrbits(addr, clear)		writel(readl(addr) & (~(clear)), addr)
 #define clrsetbits(addr, clear, set)	writel((readl(addr) & (~(clear))) | (set), addr)
 
-#define readl_poll_timeout(addr, value, cond, interval_us, timeout_us)				\
+#define readx_poll_timeout(op, addr, value, cond, interval_us, timeout_us)			\
 	({											\
 		int __ret = 0;									\
 		uint64_t __total = 0;								\
 		uint64_t __start = get_ticks();							\
 		uint64_t __timeout_ticks = (timeout_us) * (CONFIG_COUNTER_FREQUENCY / 1000000);	\
 		for (;;) {									\
-			value = readl(addr);							\
+			value = op(addr);							\
 			if (cond)								\
 				break;								\
 			__total += interval_us;							\
@@ -43,4 +43,6 @@
 		__ret;										\
 	})
 
+#define readl_poll_timeout(addr, value, cond, interval_us, timeout_us) \
+	readx_poll_timeout(readl, addr, value, cond, interval_us, timeout_us)
 #endif

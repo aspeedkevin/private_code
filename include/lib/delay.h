@@ -1,13 +1,10 @@
-/* SPDX-License-Identifier: GPL-2.0+ */
-
 #ifndef __DELAY_H__
 #define __DELAY_H__
 
-void udelay(unsigned long usec);
+#include <types.h>
 
-static inline void mdelay(unsigned long msec)
-{
-	udelay(1000 * msec);
-}
+uint64_t usec_to_tick(uint32_t usec);
+void udelay(uint64_t usec);
+void mdelay(uint64_t msec);
 
 #endif /* defined(__DELAY_H__) */

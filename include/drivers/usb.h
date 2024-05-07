@@ -2,6 +2,9 @@
 #define __USB_H__
 
 #include <types.h>
+#include <bootdev.h>
+#include <bootstage.h>
+#include <rom_context.h>
 
 enum usb_status_code {
 	STS_OKAY = 0,
@@ -27,12 +30,13 @@ enum usb_status_code {
 #define FIRMWARE_IMAGE_0_LABEL			"ram-code"
 
 #define CONFIG_CPU_SRAM_BASE			0x10000000
+#define CONFIG_CPU_SRAM_SIZE			0x20000
 #define CONFIG_USB_DMA_BUF_ADDR			CONFIG_CPU_SRAM_BASE
-#define DFU_OUTPUT_BASE				CONFIG_RAM_CODE_LOAD_ADDR
+#define USB_DMA_BUF_SIZE			CONFIG_CPU_SRAM_SIZE
+#define DFU_OUTPUT_BASE				CONFIG_FMC_LOAD_ADDR
 #define DRAM_BLOCK_SIZE				USB_DFU_MAX_XFER_SIZE
 
-bool usb_is_dnload_done(void);
-uint8_t usb_poll(void);
-void usb_enable(void);
-
+void usb_register(struct bootdev *bd);
+bootstage_t usb2uart_init(struct rom_context *rom_ctx);
+bool usb2uart_put_all_msg(void);
 #endif /* __USB_H__ */

@@ -25,21 +25,29 @@ SECTIONS
 	.rodata :
 	{
 		*(.rodata*)
+		*(.srdata*)
 	} > rom
 
 	. = ALIGN(4);
 	__data_lma = .;
-	.data : AT(__data_lma)
+	.data :
 	{
 		__data_vma_start = .;
+		*(.sdata*)
 		*(.data*)
 		__data_vma_end = .;
-	} > bss_data_ram
+	} > bss_data_ram AT > rom
 
-	. = ALIGN(4);
+	.rom_digest :
+	{
+		. = ALIGN(32);
+		*(.rom_digest*)
+	} > rom
+
 	.bss :
 	{
 		__bss_start = .;
+		*(.sbss*)
 		*(.bss*)
 		__bss_end = .;
 	} > bss_data_ram

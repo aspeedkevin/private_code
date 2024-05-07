@@ -1,4 +1,3 @@
-obj-$(CONFIG_DRAM) += dram/
 obj-$(CONFIG_LTPI) += ltpi/
 obj-$(CONFIG_MMC) += mmc/
 obj-$(CONFIG_OTP) += otp/
@@ -7,4 +6,11 @@ obj-$(CONFIG_SPI) += spi/
 obj-$(CONFIG_UART) += uart/
 obj-$(CONFIG_USB) += usb/
 obj-$(CONFIG_WDT) += wdt/
-obj-$(CONFIG_PCIE) += pcie/
+obj-$(CONFIG_UFS) += ufs/
+obj-$(CONFIG_CALIPTRA) += caliptra/
+obj-$(CONFIG_TRNG) += trng/
+obj-$(CONFIG_SEC) += sec/
+obj-$(CONFIG_I3C) += i3c/
+obj-$(CONFIG_I2C) += i2c/
+obj-$(CONFIG_AHBC) += ahbc/
+obj-$(CONFIG_TIMER) += timer/
